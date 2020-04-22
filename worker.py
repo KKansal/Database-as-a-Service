@@ -10,27 +10,7 @@ db = client.rideshare
 
 db.rides.create_index([('rideId',1)],unique=True)
 
-connection = pika.BlockingConnection(
-	pika.ConnectionParameters(host='localhost'))
-
-channel = connection.channel()
-
-channel.queue_declare(queue='readQ')
-
-
-#if master then only
-channel.queue_declare(queue="writeQ")
-
-
-channel.queue_bind(
-        exchange='readWrite', queue='writeQ',routing_key='write')
-
-#endif
-
-channel.queue_bind(
-        exchange='readWrite', queue='readQ',routing_key='read')
-
-
+"""
 def write_db(channel,message,properties,body):
 	print(" [x] Received Write request%r" % body)
 	json_data = loads(body)
@@ -95,7 +75,7 @@ def delete_data(collection_name,document):
 		return 1
 	except:
 		return 0
-
+"""
 
 
 """
@@ -108,51 +88,84 @@ Body Format
 }
 
 """
-def read_db(channel,message,properties,body):
-	print(" [x] Received Read Request for %r" % body)
-	data_request = loads(body)	
-	try:
-		collection = data_request['table']
-		condition = data_request['conditions']
-	except KeyError:
-		print("KeyError-Not all fields are present")
-		pass
-		#TODO abort(400)
-	
-	cursor = db[collection].find(condition)
-	
-	if((cursor.count())>1):
-		print("WARNING :The Query matches",cursor.count(),"documents")
-	
-	elif(cursor.count()==0):
-		print("WARNING : 0 results matched")
-		#TODO respone_204 = make_response('',204)
-		#return respone_204
-
-	res = list()
-	
-	for row in cursor:
-		row.pop("_id")
-		res.append(row)
-	print(res)
-	return dumps(res)
-	# res = cursor[0]                      
-	# res.pop("_id")
-	# return jsonify(res)
 
 
-channel.basic_consume(
-    queue='read', on_message_callback=read_db, auto_ack=True)
 
 
-channel.basic_consume(
-	queue='write', on_message_callback=write_db, auto_ack=True)
+
+class rabbitmqServer():
+	def __init__(self):
+		self.connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+
+		self.channel = self.connection.channel()
+
+		self.channel.exchange_declare(exchange='readWrite',exchange_type='direct')
+
+		self.channel.queue_declare(queue='readQ')
+
+		self.channel.queue_declare(queue="responseQ")
+
+		#if master then only
+		# self.channel.queue_declare(queue="writeQ")
 
 
-print(' [*] Waiting for messages. To exit press CTRL+C')
-channel.start_consuming()
+		# self.channel.queue_bind(exchange='readWrite', queue='writeQ',routing_key='write')
 
+		#endif
 
+		self.channel.queue_bind(exchange='readWrite', queue='readQ',routing_key='read')
+
+		self.channel.queue_bind(exchange="readWrite",queue="responseQ")
+
+		self.channel.basic_consume(queue='readQ', on_message_callback=self.read_db)
+
+		# self.channel.basic_consume(queue='writeQ', on_message_callback=write_db)
+
+		print(' [*] Waiting for messages. To exit press CTRL+C')
+		self.channel.start_consuming()
+
+	def read_db(self,channel,method,props,body):
+		print(" [x] Received Read Request for %r" % body)
+		data_request = loads(body)
+		response = {"status_code":None,"data":{}}
+		try:
+			collection = data_request['table']
+			condition = data_request['conditions']
+		except KeyError:
+			print("KeyError-Not all fields are present")
+			response["status_code"] = 400
+			return self.sendResponse(dumps(response),method,props)
+
+		
+		cursor = db[collection].find(condition)
+		
+		if((cursor.count())>1):
+			print("WARNING :The Query matches",cursor.count(),"documents")
+		
+		elif(cursor.count()==0):
+			print("WARNING : 0 results matched")
+			response["status_code"] = 204
+			return self.sendResponse(dumps(response),method,props)
+			
+		res = list()
+		
+		for row in cursor:
+			row.pop("_id")
+			res.append(row)
+		print(res)
+
+		response["status_code"] = 200
+		response["data"] = dumps(res)
+		return self.sendResponse(dumps(response),method,props)
+
+	def sendResponse(self,response,method,props):
+			self.channel.basic_publish(exchange='readWrite',routing_key=props.reply_to,
+                     					properties=pika.BasicProperties(correlation_id = props.correlation_id),
+                     					body=str(response))
+			self.channel.basic_ack(delivery_tag=method.delivery_tag)
+			print("Response Sent")	
+
+server = rabbitmqServer()
 
 
 

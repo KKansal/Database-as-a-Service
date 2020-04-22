@@ -1,75 +1,99 @@
-import pika
 from flask import Flask,request,jsonify,abort
+import json
+import pika
+import uuid
+
 
 app = Flask(__name__)
 
-connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
-channel = connection.channel()
+
+class rabbitmqClient():
+
+	def __init__(self):
+		#Set up Connection
+		self.connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+		self.channel = self.connection.channel()
+
+		#Declare Exchange
+		self.channel.exchange_declare(exchange='readWrite',exchange_type='direct')
+
+		#Declare readQ
+		self.channel.queue_declare(queue='readQ')
+
+		#Declare writeQ
+		# writeQ = self.channel.queue_declare(queue="writeQ")
+		# self.writeQ = writeQ.method.queue
+
+		#Declare ReadQ
+		responseQ = self.channel.queue_declare(queue="responseQ")
+		self.responseQ = responseQ.method.queue
+
+		# self.channel.queue_bind(exchange='readWrite', queue='writeQ',routing_key='write')
+
+		self.channel.queue_bind(exchange="readWrite", queue=self.responseQ)
+
+		self.channel.queue_bind(exchange='readWrite', queue='readQ',routing_key='read')
+
+		self.channel.basic_consume(
+            queue=self.responseQ,
+            on_message_callback=self.on_response)
+
+		# self.channel.basic_consume(
+        #     queue=self.writeQ,
+        #     on_message_callback=self.on_response,
+        #     auto_ack=True)
 
 
-channel.exchange_declare(exchange='readWrite',
-                         exchange_type='direct')
+	def sendMessage(self,routing_key,message,callback_queue):
+		self.response = None
+		self.corr_id = str(uuid.uuid4())
+		self.channel.basic_publish(exchange='readWrite',
+							properties=pika.BasicProperties(
+								reply_to = callback_queue,
+								correlation_id=self.corr_id,
+							),
+							routing_key=routing_key,
+							body=message)
+
+		while self.response is None:
+			# print("Waiting..")
+			self.connection.process_data_events()
+		
+		# print(self.response)
+		return self.response
+
+	def on_response(self, ch, method, props, body):
+		if self.corr_id == props.correlation_id:
+			self.response = body
+			ch.basic_ack(delivery_tag=method.delivery_tag)
+		else:
+			print("Recieved a Message")
 
 
-def sendMessage(routing_key,message):
-	channel.basic_publish(exchange='readWrite',
-                      	routing_key=routing_key,
-                      	body=message)
+client = rabbitmqClient()
 
 
 @app.route("/api/v1/write",methods=["POST"])
 def write_db():
-	print("Recieved a Write Request")
-	sendMessage('write',request.data)
+	# print("Recieved a Write Request")
+	# client.sendMessage('write',request.data,client.writeQ)
 
 	return " "
 
 
 @app.route("/api/v1/read",methods=["POST"])
 def read_db():
-	print("Recieved a Read Response")
-	sendMessage('read',request.data)
+	print("Recieved a Read Request")
+
+	response = json.loads(client.sendMessage('read',request.data,client.responseQ))
 	
-	return " "
+	if(response['status_code'] in ['400']):
+		abort(response['status_code'])
+	
+	else:
+		return (response['data'],response['status_code'])
 
 if __name__ == '__main__':	
-	app.debug=True
-	app.run(host="0.0.0.0",threaded=True)  #Threaded to have Mutliple concurrent requests
+	app.run()  #Threaded to have Mutliple concurrent requests
 
-connection.close()
-
-
-
-"""
-8.Write a DB
-
-POST Request
-Body Format FOR insert update
-{
-	"operation":"insert","update"
-	"data":data  // A row in JSON format
-	"table" :"tablename" 
-}
-
-Body Format
-{
-	"operation":"update"
-	"data":"data_to_Be updated"
-	"table":"table_name"
-	"filter":"filter for documents"
-
-
-}
-"""
-
-
-"""
-9. Read from DB
-POST Request
-Body Format
-{
-	"table":"tablename",
-	"conditions":{column:value , ...}
-}
-
-"""
+# connection.close()

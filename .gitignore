@@ -5,3 +5,4 @@ recieve.py
 requirements.txt
 send.py
 workspace*
+.*
