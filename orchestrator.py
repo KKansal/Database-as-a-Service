@@ -10,38 +10,41 @@ app = Flask(__name__)
 class rabbitmqClient():
 
 	def __init__(self):
-		#Set up Connection
+		# Set up Connection
 		self.connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
 		self.channel = self.connection.channel()
 
-		#Declare Exchange
+		# Declare Exchange
 		self.channel.exchange_declare(exchange='readWrite',exchange_type='direct')
 
-		#Declare readQ
+		# Declare readQ
 		self.channel.queue_declare(queue='readQ')
 
-		#Declare writeQ
-		# writeQ = self.channel.queue_declare(queue="writeQ")
-		# self.writeQ = writeQ.method.queue
+		# Declare writeQ
+		self.channel.queue_declare(queue="writeQ")
 
-		#Declare ReadQ
+		#Declare  Response Queues
 		responseQ = self.channel.queue_declare(queue="responseQ")
 		self.responseQ = responseQ.method.queue
 
-		# self.channel.queue_bind(exchange='readWrite', queue='writeQ',routing_key='write')
+		writeResponseQ = self.channel.queue_declare(queue="writeResponseQ")
+		self.writeResponseQ = writeResponseQ.method.queue
+
+		self.channel.queue_bind(exchange='readWrite', queue='writeQ',routing_key='write')
 
 		self.channel.queue_bind(exchange="readWrite", queue=self.responseQ)
 
 		self.channel.queue_bind(exchange='readWrite', queue='readQ',routing_key='read')
 
+		self.channel.queue_bind(exchange = 'readWrite' , queue = self.writeResponseQ)
+
 		self.channel.basic_consume(
             queue=self.responseQ,
             on_message_callback=self.on_response)
 
-		# self.channel.basic_consume(
-        #     queue=self.writeQ,
-        #     on_message_callback=self.on_response,
-        #     auto_ack=True)
+		self.channel.basic_consume(
+            queue=self.writeResponseQ,
+            on_message_callback=self.on_response)
 
 
 	def sendMessage(self,routing_key,message,callback_queue):
@@ -64,6 +67,7 @@ class rabbitmqClient():
 
 	def on_response(self, ch, method, props, body):
 		if self.corr_id == props.correlation_id:
+			print("got REsponse")
 			self.response = body
 			ch.basic_ack(delivery_tag=method.delivery_tag)
 		else:
@@ -75,10 +79,14 @@ client = rabbitmqClient()
 
 @app.route("/api/v1/write",methods=["POST"])
 def write_db():
-	# print("Recieved a Write Request")
-	# client.sendMessage('write',request.data,client.writeQ)
+	print("Recieved a Write Request")
+	response = json.loads(client.sendMessage('write',request.data,client.responseQ))
 
-	return " "
+	if(response['status_code'] in [400,405]):
+		abort(response['status_code'])
+
+	else:	
+		return ("",response['status_code'])
 
 
 @app.route("/api/v1/read",methods=["POST"])
@@ -87,7 +95,7 @@ def read_db():
 
 	response = json.loads(client.sendMessage('read',request.data,client.responseQ))
 	
-	if(response['status_code'] in ['400']):
+	if(response['status_code'] in [400]):
 		abort(response['status_code'])
 	
 	else:
