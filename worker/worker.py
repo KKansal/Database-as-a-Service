@@ -1,28 +1,83 @@
 from pymongo import MongoClient,errors
+from kazoo.client import KazooClient
+from kazoo.client import KazooState
 import logging
+import socket
 import pika
 import json
 import sys
 
 MONGODB_HOST = 'mongodb'
 RABBITMQ_HOST = 'rabbitmq'
+ZOOKEEPER_HOST = 'zookeeper'
 
 logging.getLogger("pika").setLevel(logging.WARNING)
 
 logging.basicConfig(format='%(asctime)s [%(levelname)s]:%(message)s', level=logging.DEBUG, datefmt='%I:%M:%S %p')
 
+logging.getLogger().setLevel(logging.INFO)
 client = MongoClient("mongodb://"+ MONGODB_HOST+ ":27017")
 
 db = client.rideshare
 db.users.create_index('username',unique=True)
 db.rides.create_index([('rideId',1)],unique=True)
 
+zk = KazooClient(hosts=ZOOKEEPER_HOST+':2181')
 
-#db.rides_counter_table.delete_many({})
-#db.rides_counter_table.insert_one({"http_counter":0})
+def my_listener(state):
+    if state == KazooState.LOST:
+        logging.warning("ZooKeeper connection Lost")
+    elif state == KazooState.SUSPENDED:
+        #Handle being disconnected from Zookeeper
+        logging.warning("ZooKeeper connection Suspended")
+    else:
+        #Handle being connected/reconnected to Zookeeper
+        logging.info("ZooKeeper Connected")
 
+zk.add_listener(my_listener)
 
+def syncfunction(channel,method,props,body):
+	logging.info(" Recieved Sync request\n Data - %r" % body)
+	json_data = json.loads(body)
+	try:
+		collection_name = json_data['table']
+		document =  json_data['data']
+		if(json_data['operation']=="update"):
+			filter_data = json_data['filter']
+	except:
+		logging.error("Unable to Sync")
 
+	if(json_data['operation']=="insert"):
+		success_code = insert_data(collection_name,document)
+	elif(json_data['operation']=="delete"):
+		success_code = delete_data(collection_name,document)
+	elif(json_data['operation']=="update"):
+		success_code = update_data(collection_name,document,filter_data)
+	else:
+		logging.error("Unable to Sync")
+	if(success_code==1):
+		logging.info("Sync Operation SuccessFull")
+	else:
+		logging.error("Unable to Sync")
+
+def killserver(queue_name):
+	connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
+	channel = connection.channel()
+	channel.basic_publish(exchange = 'kill_exchange',
+							routing_key=queue_name,
+							body="")
+	connection.close()
+
+def get_previous_data():
+	connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
+	channel = connection.channel()
+	channel.basic_consume(queue='eatQ', on_message_callback=syncfunction)
+	logging.info("SYNC Process Started")
+	connection.process_data_events()
+	logging.info("SYNC Process Completed Slave Up to date")
+	connection.close()
+
+get_previous_data()
 
 def update_data(collection_name,document,filter_data):
 
@@ -62,47 +117,32 @@ def delete_data(collection_name,document):
 		return 0
 
 
-
-"""
-9. Read from DB
-POST Request
-Body Format
-{
-	"table":"tablename",
-	"conditions":{column:value , ...}
-}
-
-"""
-
-
-
-
-
 class serverSlave():
 	def __init__(self):
-		self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
+		self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST,socket_timeout=10))
 
 		self.channel = self.connection.channel()
 
 		self.channel.exchange_declare(exchange='readWrite',exchange_type='direct')
+		self.channel.exchange_declare(exchange='kill_exchange',exchange_type='direct')
 		self.channel.exchange_declare(exchange='sync',exchange_type='fanout')
 
 
 		self.channel.queue_declare(queue='readQ')
 		self.channel.queue_declare(queue="responseQ")
-		self.syncQ = self.channel.queue_declare(queue='', exclusive=True)
+		syncQ = self.channel.queue_declare(queue='', exclusive=True)
+		self.syncQ = syncQ.method.queue
+		killQ = self.channel.queue_declare(queue='', exclusive=True)
+		self.killQ = killQ.method.queue
 
 		self.channel.queue_bind(exchange='readWrite', queue='readQ',routing_key='read')
 		self.channel.queue_bind(exchange="readWrite",queue="responseQ")
-		self.channel.queue_bind(exchange="sync",queue=self.syncQ.method.queue)
+		self.channel.queue_bind(exchange="sync",queue=self.syncQ)
 
 		self.channel.basic_consume(queue='readQ', on_message_callback=self.read_db)
-		self.channel.basic_consume(queue=self.syncQ.method.queue, on_message_callback=self.syncfunction)
-
+		self.channel.basic_consume(queue=self.syncQ, on_message_callback=syncfunction,auto_ack=True)
+		self.channel.basic_consume(queue=self.killQ, on_message_callback=self.killfunction,auto_ack = True)
 		
-		logging.info("Slave Waiting for 'read' messages")
-		self.channel.start_consuming()
-
 	def read_db(self,channel,method,props,body):
 		logging.info(" [x] Received Read Request for\n Data -%s" % body)
 		data_request = json.loads(body)
@@ -145,37 +185,22 @@ class serverSlave():
                      					body=str(response))
 			self.channel.basic_ack(delivery_tag=method.delivery_tag)
 			logging.info("Read Request Acknowledged")	
+		
+	def start_consuming(self):
+		logging.info("Slave Waiting for 'read' messages")
+		self.channel.start_consuming()
+	
+	def killfunction(self,channel,method,props,body):
+		self.channel.stop_consuming()
+		self.connection.close()
 
-	def syncfunction(self,channel,method,props,body):
-		logging.info(" Recieved Sync request\n Data - %r" % body)
-		json_data = json.loads(body)
-		try:
-			collection_name = json_data['table']
-			document =  json_data['data']
-			if(json_data['operation']=="update"):
-				filter_data = json_data['filter']
-		except:
-			logging.error("Unable to Sync")
-
-		if(json_data['operation']=="insert"):
-			success_code = insert_data(collection_name,document)
-		elif(json_data['operation']=="delete"):
-			success_code = delete_data(collection_name,document)
-		elif(json_data['operation']=="update"):
-			success_code = update_data(collection_name,document,filter_data)
-		else:
-			logging.error("Unable to Sync")
-		if(success_code==1):
-			logging.info("Sync Operation SuccessFull")
-		else:
-			logging.error("Unable to Sync")
 
 
 class serverMaster():
 
 	def __init__(self):
 		
-		self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
+		self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST,socket_timeout=10))
 
 		self.channel = self.connection.channel()
 
@@ -185,14 +210,12 @@ class serverMaster():
 	
 		self.channel.queue_declare(queue = "writeQ")
 		self.channel.queue_declare(queue = "writeResponseQ")
+		self.channel.queue_declare(queue='eatQ')
 
 		self.channel.queue_bind(exchange = 'readWrite', queue='writeQ',routing_key='write')
 		self.channel.queue_bind(exchange = 'readWrite' , queue="writeResponseQ")
 
 		self.channel.basic_consume(queue='writeQ', on_message_callback=self.write_db)
-
-		logging.info("Master Waiting for 'write' messages")
-		self.channel.start_consuming()
 
 	def write_db(self,channel,method,props,body):
 		logging.info("Received Write request\n Data - %r" % body)
@@ -237,20 +260,61 @@ class serverMaster():
 
 	def sendSyncMessage(self,json_data):
 		logging.info("Publishing Sync Messages")
-		self.channel.basic_publish(exchange="sync",routing_key='syncMessage',body=json_data)	
+		self.channel.basic_publish(exchange="sync",routing_key='syncMessage',body=json_data)
+
+	def start_consuming(self):
+		logging.info("Master Waiting for 'write' messages")
+		self.channel.start_consuming()	
 
 
+server = None
+
+zk.start()
+
+container_shortid = socket.gethostname()[0:10]
+
+pid = int(zk.get('/Nodes/' + container_shortid)[0])
+logging.info("PID Of current Container is %d",pid)
+
+node = zk.create("/Election/node-"+str(pid),str(pid).encode('utf-8'),ephemeral=True)
+node_name = node.split("/")[2]
+logging.info("Emphemeral Node created %s",node_name)
+
+if zk.exists("/Election/master") == None:
+	logging.info("Master Does Not exist")
+	zk.create("/Election/master", str(pid).encode('utf-8'))
+	server_type  = 'master'
+else:
+	logging.info("Master Exist")
+	server_type = 'slave'
+	
+
+@zk.DataWatch('/Election/master')
+def master_change(data,stat,event):
+	global pid
+	global server
+	if(event ==None):
+		pass
+	else:
+		if(event.type=="CHANGED"):			
+			master_pid = int(zk.get("/Election/master")[0])
+			logging.info("New Master - %d",master_pid)
+			logging.info("pid - %d",pid)
+			if(pid == master_pid):
+				logging.info("Switching to Master Role")
+				killserver(server.killQ)
+				server = serverMaster()
+				server.start_consuming()
+				return False
+	return True
 
 
-
-
-if(sys.argv[1] == "1"):
+if(server_type=='master'):
 	server = serverMaster()
+	server.start_consuming()
 else:
 	server = serverSlave()
-
-
-
+	server.start_consuming()
 
 
 
