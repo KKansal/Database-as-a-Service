@@ -6,86 +6,19 @@ import docker
 import json
 import pika
 import uuid
-# import logging
+import logging
+
 
 
 # logging.basicConfig()
 
-app = Flask(__name__)
-
-
-
 client = docker.from_env()
 zookeeper = client.containers.run("zookeeper",detach=True,ports={2181:2181,3888:3888,8080:8080})
 
-rabbit = client.containers.run("rabbitmq:3-management",detach=True,ports={15672:15672,5672:5672})
-
-import time 
-time.sleep(10)
-
-zk = KazooClient(hosts = "127.0.0.1:2181",timeout=10)
-print(zk)
-
-
-
-def my_listener(state):
-	# global pid
-	if state == KazooState.LOST:
-		print("lost")
-	elif state == KazooState.SUSPENDED:
-		#Handle being disconnected from Zookeeper
-		print("Suspended")
-	else:
-		#Handle being connected/reconnected to Zookeeper
-		print("connected")
-
-zk.add_listener(my_listener)
-zk.start()
-zk.ensure_path("/Election/")
-
-if(zk.exists("/Election/master")):
-	zk.delete("/Election/master")
-
-
-
-@zk.ChildrenWatch("/Election/", send_event = True)
-def watch_parent_node(children, event):
-	print("Event Occurred")
-	if event == None:
-		pass
-	else:
-		if len(children) == 0 or len(children) == 1:
-			print("Only master present")
-		else:
-			data = zk.get("/Election/master")[0].decode('utf-8')
-			print("Previous Master -",data)
-			for i in children:
-				if i != "master" and data == str(i.split("-")[1]):
-					print("Master is Alive")
-					return True
-			print("Master Dead")
-			sorted_children = sorted(children)
-			data = str(sorted_children[1]).split("-")[1]
-			print("New Master",data)
-			zk.set("Election/master",data.encode('utf-8'))
-
-
-
-zk.ensure_path("/Nodes/")
-
-mongoContainer = client.containers.run('mongo',detach=True)
-worker = client.containers.run("worker",command=['python','worker.py','1'],links={mongoContainer.id:"mongodb",rabbit.id:"rabbitmq",zookeeper.id:"zookeeper"},restart_policy={"Name":"on-failure"},detach=True)
-print(worker.short_id)
-zk.create('/Nodes/'+worker.short_id,str(worker.top()['Processes'][0][1]).encode('utf-8'))
-
-
-mongoContainer = client.containers.run('mongo',detach=True)
-worker = client.containers.run("worker",command=['python','worker.py','0']
-										,links={mongoContainer.id:"mongodb",rabbit.id:"rabbitmq",zookeeper.id:"zookeeper"}
-										,restart_policy={"Name":"on-failure"}
-										,detach=True)
-zk.create('/Nodes/'+worker.short_id,str(worker.top()['Processes'][0][1]).encode('utf-8'))
-print(worker.short_id)
+rabbit = client.containers.run("rabbitmq:3-management",
+								hostname='rabbitmq',
+								volumes = {'rabbitmq':{'bind':"/var/lib/rabbitmq",'mode':'rw'}},
+								detach=True,ports={15672:15672,5672:5672})
 
 
 class rabbitmqClient():
@@ -165,14 +98,85 @@ class rabbitmqClient():
 		else:
 			print("Recieved a Message")
 
-client = rabbitmqClient()
+
+
+
+def launch_worker(client):
+	mongoContainer = client.containers.run('mongo',detach=True)
+	worker = client.containers.run("worker",command=['python','worker.py','1'],links={mongoContainer.id:"mongodb",rabbit.id:"rabbitmq",zookeeper.id:"zookeeper"},restart_policy={"Name":"on-failure"},detach=True)
+	logging.info("Worker - %s Created",worker.short_id)
+	pid = worker.top()['Processes'][0][1]
+	zk.create('/Nodes/'+worker.short_id,str(pid).encode('utf-8'))
+	return (worker.short_id,pid)
+
+app = Flask(__name__)
+
+
+
+
+import time 
+time.sleep(10)
+
+zk = KazooClient(hosts = "127.0.0.1:2181",timeout=10)
+
+def my_listener(state):
+	# global pid
+	if state == KazooState.LOST:
+		print("lost")
+	elif state == KazooState.SUSPENDED:
+		#Handle being disconnected from Zookeeper
+		print("Suspended")
+	else:
+		#Handle being connected/reconnected to Zookeeper
+		print("connected")
+
+zk.add_listener(my_listener)
+zk.start()
+zk.ensure_path("/Election/")
+zk.ensure_path("/Nodes/")
+
+
+if(zk.exists("/Election/master")):
+	zk.delete("/Election/master")
+
+rabbit_client = rabbitmqClient()
+
+
+launch_worker(client)
+launch_worker(client)
+
+@zk.ChildrenWatch("/Election/", send_event = True)
+def watch_parent_node(children, event):
+	print("Event Occurred")
+	if event == None:
+		pass
+	else:
+		if len(children) == 0 or len(children) == 1:
+			print("Only master present")
+		else:
+			data = zk.get("/Election/master")[0].decode('utf-8')
+			print("Previous Master -",data)
+			for i in children:
+				if i != "master" and data == str(i.split("-")[1]):
+					print("Master is Alive")
+					return True
+			print("Master Dead")
+			sorted_children = sorted(children)
+			data = str(sorted_children[1]).split("-")[1]
+			print("New Master",data)
+			zk.set("Election/master",data.encode('utf-8'))
+
+
+
+
+
 
 
 
 @app.route("/api/v1/write",methods=["POST"])
 def write_db():
 	print("Recieved a Write Request")
-	response = json.loads(client.sendMessage('write',request.data,client.responseQ))
+	response = json.loads(rabbit_client.sendMessage('write',request.data,rabbit_client.responseQ))
 
 	if(response['status_code'] in [400,405]):
 		abort(response['status_code'])
@@ -185,7 +189,7 @@ def write_db():
 def read_db():
 	print("Recieved a Read Request")
 
-	response = json.loads(client.sendMessage('read',request.data,client.responseQ))
+	response = json.loads(rabbit_client.sendMessage('read',request.data,rabbit_client.responseQ))
 	
 	if(response['status_code'] in [400]):
 		abort(response['status_code'])
@@ -193,7 +197,62 @@ def read_db():
 	else:
 		return (response['data'],response['status_code'])
 
-if __name__ == '__main__':	
-	app.run(threaded=False)  #Threaded to have Mutliple concurrent requests
+
+@app.route("/api/v1/crash/master",methods=["POST"])
+def crash_master():
+	logging.info("Request to Crash Master")
+	master_pid = int(zk.get("/Election/master")[0].decode('utf-8'))
+	running_containers = zk.get_children("/Nodes")
+	if(len(running_containers == 2)):
+		abort(405)
+
+	for container in running_containers:
+		container_pid = int(zk.get("/Nodes/" + container)[0].decode('utf-8'))
+		if(master_pid == container_pid):
+			zk.delete("/Nodes/"+container)
+			client.containers.get(container).stop()
+			break
+	return jsonify([master_pid]) 		
+
+@app.route("/api/v1/crash/slave",methods=["POST"])
+def crash_slave():
+	logging.info("Request to Crash Slave")
+	running_containers = zk.get_children("/Nodes")
+	if(len(running_containers == 2)):
+		abort(405)	
+	mapping = dict()
+
+	for container in running_containers:
+		container_pid = int(zk.get("/Nodes/" + container)[0].decode('utf-8'))
+		mapping[container_pid] = container
+
+	highest_pid = max(mapping.keys())
+	zk.delete("/Nodes/"+mapping[highest_pid])
+	client.containers.get(mapping[highest_pid]).stop()
+		
+	return jsonify([highest_pid]) 		
+
+
+
+@app.route("/api/v1/worker/list",methods=["POST"])
+def list_worker():
+	logging.info("Request to List all workers")
+	running_containers = zk.get_children("/Nodes")
+	pid_list = []
+	for container in running_containers:
+		container_pid = int(zk.get("/Nodes/" + container)[0].decode('utf-8'))
+		pid_list.append(container_pid)
+	pid_list.sort()
+	return jsonify(pid_list) 		
+	
+
+
+
+
+
+
+if __name__ == '__main__':
+	app.debug =True	
+	app.run(use_reloader = False)  #Threaded to have Mutliple concurrent requests
 
 

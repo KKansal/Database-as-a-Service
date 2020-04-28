@@ -10,6 +10,8 @@ import sys
 MONGODB_HOST = 'mongodb'
 RABBITMQ_HOST = 'rabbitmq'
 ZOOKEEPER_HOST = 'zookeeper'
+count = 0
+
 
 logging.getLogger("pika").setLevel(logging.WARNING)
 
@@ -37,7 +39,9 @@ def my_listener(state):
 zk.add_listener(my_listener)
 
 def syncfunction(channel,method,props,body):
-	logging.info(" Recieved Sync request\n Data - %r" % body)
+	global count
+	count +=1
+	logging.info(" Recieved Sync %d request\n Data - %s",count,body)
 	json_data = json.loads(body)
 	try:
 		collection_name = json_data['table']
@@ -74,10 +78,9 @@ def get_previous_data():
 	channel.basic_consume(queue='eatQ', on_message_callback=syncfunction)
 	logging.info("SYNC Process Started")
 	connection.process_data_events()
-	logging.info("SYNC Process Completed Slave Up to date")
+	logging.info("SYNC Process Completed Slave synced with %d",count)
 	connection.close()
 
-get_previous_data()
 
 def update_data(collection_name,document,filter_data):
 
@@ -116,6 +119,8 @@ def delete_data(collection_name,document):
 	except:
 		return 0
 
+
+get_previous_data()
 
 class serverSlave():
 	def __init__(self):
@@ -210,7 +215,7 @@ class serverMaster():
 	
 		self.channel.queue_declare(queue = "writeQ")
 		self.channel.queue_declare(queue = "writeResponseQ")
-		self.channel.queue_declare(queue='eatQ')
+		self.channel.queue_declare(queue='eatQ',durable= True)
 
 		self.channel.queue_bind(exchange = 'readWrite', queue='writeQ',routing_key='write')
 		self.channel.queue_bind(exchange = 'readWrite' , queue="writeResponseQ")
@@ -260,7 +265,12 @@ class serverMaster():
 
 	def sendSyncMessage(self,json_data):
 		logging.info("Publishing Sync Messages")
-		self.channel.basic_publish(exchange="sync",routing_key='syncMessage',body=json_data)
+		self.channel.basic_publish(exchange="sync",
+								routing_key='syncMessage',
+								body=json_data,
+								properties=pika.BasicProperties(
+                         delivery_mode = 2, 
+                      ))
 
 	def start_consuming(self):
 		logging.info("Master Waiting for 'write' messages")
