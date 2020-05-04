@@ -105,7 +105,7 @@ def launch_worker(client):
 	worker = client.containers.run("worker",command=['python','worker.py'],links={mongoContainer.id:"mongodb",rabbit.id:"rabbitmq",zookeeper.id:"zookeeper"},restart_policy={"Name":"on-failure"},detach=True)
 	logging.info("Worker - %s Created",worker.short_id)
 	pid = worker.top()['Processes'][0][1]
-	zk.create('/Nodes/'+worker.short_id,str(pid).encode('utf-8'))
+	zk.create('/Container_pid/'+worker.short_id,str(pid).encode('utf-8'))
 	return (worker.short_id,pid)
 
 app = Flask(__name__)
@@ -129,14 +129,12 @@ def my_listener(state):
 		#Handle being connected/reconnected to Zookeeper
 		print("connected")
 
+
 zk.add_listener(my_listener)
 zk.start()
-zk.ensure_path("/Election/")
-zk.ensure_path("/Nodes/")
 
-
-if(zk.exists("/Election/master")):
-	zk.delete("/Election/master")
+zk.ensure_path("/Election/Slaves")
+zk.ensure_path("/Container_pid/")
 
 rabbit_client = rabbitmqClient()
 
@@ -144,34 +142,19 @@ rabbit_client = rabbitmqClient()
 launch_worker(client)
 launch_worker(client)
 
-@zk.ChildrenWatch("/Election/", send_event = True)
+@zk.ChildrenWatch("/Election/Slaves", send_event = True)
 def watch_parent_node(children, event):
-	print("Event Occurred")
-	if event == None:
-		pass
-	else:
-		if len(children) == 0 or len(children) == 1:
-			print("Only master present")
-		else:
-			data = zk.get("/Election/master")[0].decode('utf-8')
-			print("Previous Master -",data)
-			for i in children:
-				if i != "master" and data == str(i.split("-")[1]):
-					print("Master is Alive")
-					return True
-			print("Master Dead")
-			sorted_children = sorted(children)
-			data = str(sorted_children[1]).split("-")[1]
-			print("New Master",data)
-			zk.set("Election/master",data.encode('utf-8'))
+	if(event !=None):
+		n_workers = set(zk.get_children("/Container_pid"))
+		if(len(children) < len(n_workers) ):
+			print("Slave is has been deleted")
+			removed_container =	n_workers.difference(set(children)).pop()
+			zk.delete("/Container_pid/" + removed_container)
+			#Launch a node
 			launch_worker(client)
-
-
-
-
-
-
-
+		else:
+			print("Slave is added")
+			
 
 @app.route("/api/v1/write",methods=["POST"])
 def write_db():
@@ -197,12 +180,12 @@ def read_db():
 	else:
 		return (response['data'],response['status_code'])
 
-
+#TODO
 @app.route("/api/v1/crash/master",methods=["POST"])
 def crash_master():
 	logging.info("Request to Crash Master")
-	master_pid = int(zk.get("/Election/master")[0].decode('utf-8'))
-	running_containers = zk.get_children("/Nodes")
+	master_pid = int(zk.get("/Election/Master")[0].decode('utf-8'))
+	running_containers = zk.get_children("/Election/Slaves")
 	if(len(running_containers == 2)):
 		abort(405)
 
@@ -213,7 +196,7 @@ def crash_master():
 			client.containers.get(container).stop()
 			break
 	return jsonify([master_pid]) 		
-
+#TODO
 @app.route("/api/v1/crash/slave",methods=["POST"])
 def crash_slave():
 	logging.info("Request to Crash Slave")

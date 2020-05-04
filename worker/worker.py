@@ -283,39 +283,45 @@ zk.start()
 
 container_shortid = socket.gethostname()[0:10]
 
-pid = int(zk.get('/Nodes/' + container_shortid)[0])
+pid = int(zk.get('/Container_pid/' + container_shortid)[0])
 logging.info("PID Of current Container is %d",pid)
 
-node = zk.create("/Election/node-"+str(pid),str(pid).encode('utf-8'),ephemeral=True)
-node_name = node.split("/")[2]
+node = zk.create("/Election/Slaves/"+ container_shortid,str(pid).encode('utf-8'),ephemeral=True)
+node_name = node.split("/")[3]
 logging.info("Emphemeral Node created %s",node_name)
 
-if zk.exists("/Election/master") == None:
+if zk.exists("/Election/Master") == None:
 	logging.info("Master Does Not exist")
-	zk.create("/Election/master", str(pid).encode('utf-8'))
+	zk.create("/Election/Master", str(pid).encode('utf-8'),ephemeral=True)
 	server_type  = 'master'
 else:
 	logging.info("Master Exist")
 	server_type = 'slave'
 	
 
-@zk.DataWatch('/Election/master')
-def master_change(data,stat,event):
+@zk.DataWatch("/Election/Master")
+def watch_parent_node(data,stat, event):
 	global pid
 	global server
-	if(event ==None):
-		pass
-	else:
-		if(event.type=="CHANGED"):			
-			master_pid = int(zk.get("/Election/master")[0])
-			logging.info("New Master - %d",master_pid)
-			logging.info("pid - %d",pid)
-			if(pid == master_pid):
-				logging.info("Switching to Master Role")
-				killserver(server.killQ)
-				server = serverMaster()
-				server.start_consuming()
-				return False
+	if(event !=None):
+		print("Master Down")
+		alive_slaves = zk.get_children("/Election/Slaves")
+		master_pid = float('inf')
+		for container_name in alive_slaves:
+			container_pid = int(zk.get("/Election/Slaves/"+container_name)[0].decode('utf-8'))
+			if(container_pid < master_pid):
+				master_pid = pid
+		
+		logging.info("New Master - %d",master_pid)
+		logging.info("pid - %d",pid)
+		
+		if(master_pid == pid):
+			logging.info("Switching to Master Role")
+			zk.create("/Election/Master", str(pid).encode('utf-8'),ephemeral=True)
+			killserver(server.killQ)
+			server = serverMaster()
+			server.start_consuming()
+			return False
 	return True
 
 
