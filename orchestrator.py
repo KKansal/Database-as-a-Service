@@ -1,7 +1,6 @@
 from flask import Flask,request,jsonify,abort
 from kazoo.client import KazooClient
 from kazoo.client import KazooState
-from threading import Thread
 import docker
 import json
 import pika
@@ -103,7 +102,7 @@ class rabbitmqClient():
 
 def launch_worker(client):
 	mongoContainer = client.containers.run('mongo',detach=True)
-	worker = client.containers.run("worker",command=['python','worker.py','1'],links={mongoContainer.id:"mongodb",rabbit.id:"rabbitmq",zookeeper.id:"zookeeper"},restart_policy={"Name":"on-failure"},detach=True)
+	worker = client.containers.run("worker",command=['python','worker.py'],links={mongoContainer.id:"mongodb",rabbit.id:"rabbitmq",zookeeper.id:"zookeeper"},restart_policy={"Name":"on-failure"},detach=True)
 	logging.info("Worker - %s Created",worker.short_id)
 	pid = worker.top()['Processes'][0][1]
 	zk.create('/Nodes/'+worker.short_id,str(pid).encode('utf-8'))
@@ -115,7 +114,7 @@ app = Flask(__name__)
 
 
 import time 
-time.sleep(10)
+time.sleep(20)
 
 zk = KazooClient(hosts = "127.0.0.1:2181",timeout=10)
 
@@ -165,6 +164,7 @@ def watch_parent_node(children, event):
 			data = str(sorted_children[1]).split("-")[1]
 			print("New Master",data)
 			zk.set("Election/master",data.encode('utf-8'))
+			launch_worker(client)
 
 
 
