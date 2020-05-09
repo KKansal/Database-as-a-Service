@@ -1,0 +1,47 @@
+version: '3.5'
+services:
+    orchestrator:
+        container_name: "orchestrator"
+        restart: always
+        build: orch/
+        volumes: 
+            - /var/run/docker.sock:/var/run/docker.sock 
+        depends_on:
+            - rabbitmq
+            - zookeeper
+            - orch_data
+        networks: 
+            - orch_net
+        expose:
+            - "5000"
+        command: ['python','orchestrator.py']
+
+    rabbitmq:
+        container_name: "rabbitmq"
+        image: "rabbitmq:3-management"
+        networks: 
+            - orch_net
+        expose:
+            - "15672"
+            - "5672"
+        volumes: 
+            - rabbitmq_vol
+    zookeeper:
+        container_name: "zookeeper"
+        image: "zookeeper"
+        networks: 
+            - orch_net
+        expose:
+            - "2181"
+            - "3888"
+            - "8080"
+
+    orch_data:
+        container_name: "orch_data"
+        image: "mongo"
+        networks: 
+            - orch_net
+
+networks: 
+    orch_net:
+        name: orch_net

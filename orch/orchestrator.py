@@ -8,7 +8,14 @@ import docker
 import json
 import pika
 import uuid
+import time
 import logging
+
+
+ZOOKEEPER_HOST = "zookeeper"
+RABBITMQ_HOST = "rabbitmq"
+MONGO_HOST = "orch_data"
+
 
 db = None
 
@@ -60,23 +67,27 @@ def scale():
 
 
 client = docker.from_env()
-zookeeper = client.containers.run("zookeeper",detach=True,ports={2181:2181,3888:3888,8080:8080})
 
-rabbit = client.containers.run("rabbitmq:3-management",
-								hostname='rabbitmq',
-								volumes = {'rabbitmq':{'bind':"/var/lib/rabbitmq",'mode':'rw'}},
-								detach=True,ports={15672:15672,5672:5672})
+# zookeeper = client.containers.run("zookeeper",
+# 								hostaname = ZOOKEEPER_HOST,
+# 								detach=True,	
+# 								ports={2181:2181,3888:3888,8080:8080})
+
+# rabbit = client.containers.run("rabbitmq:3-management",
+# 								hostname=RABBITMQ_HOST,
+# 								volumes = {'rabbitmq':{'bind':"/var/lib/rabbitmq",'mode':'rw'}},
+# 								detach=True,ports={15672:15672,5672:5672})
 
 
-client.containers.run('mongo',detach=True,hostname = 'orch-data',ports ={27017:27017})
-
+# zookeeper = client.containers.get("zookeeper")
+# rabbit = client.containers.get("rabbitmq")
 
 
 class rabbitmqClient():
 
 	def __init__(self):
 		# Set up Connection
-		self.connection = pika.BlockingConnection(pika.ConnectionParameters('localhost',heartbeat=0))
+		self.connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST,heartbeat=0))
 		self.channel = self.connection.channel()
 
 		# Declare Exchange
@@ -176,8 +187,11 @@ def stop_worker():
 def start_worker():
 	client = docker.from_env()
 	mongoContainer = client.containers.run('mongo',detach=True)
-	worker = client.containers.run("worker",command=['python','worker.py'],links={mongoContainer.id:"mongodb",rabbit.id:"rabbitmq",zookeeper.id:"zookeeper"},restart_policy={"Name":"on-failure"},detach=True)
+	# worker = client.containers.run("worker",command=['python','worker.py'],links={mongoContainer.id:"mongodb",rabbit.id:"rabbitmq",zookeeper.id:"zookeeper"},restart_policy={"Name":"on-failure"},detach=True)
+	worker = client.containers.create("worker",command=['python','worker.py'],links={mongoContainer.id:"mongodb"},detach=True)
+	client.networks.get("orch_net").connect(worker.id)
 	logging.info("Worker - %s Created",worker.short_id)
+	worker.start()
 	pid = worker.top()['Processes'][0][1]
 	zk.create('/Container_pid/'+worker.short_id,str(pid).encode('utf-8'))
 	zk.create('/Container_pid/'+worker.short_id + '/' + mongoContainer.short_id)
@@ -186,18 +200,13 @@ def start_worker():
 app = Flask(__name__)
 
 
-
-
-import time 
-time.sleep(20)
-
-mongo_client = MongoClient("mongodb://"+ 'localhost' + ":27017")
+mongo_client = MongoClient("mongodb://"+ MONGO_HOST + ":27017")
 
 db = mongo_client.orchdata
 db['counter'].insert_one({"count":0,"flag":False})
 
 
-zk = KazooClient(hosts = "127.0.0.1:2181",timeout=10)
+zk = KazooClient(hosts = ZOOKEEPER_HOST+":2181",timeout=10)
 
 def my_listener(state):
 	# global pid
