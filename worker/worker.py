@@ -309,8 +309,9 @@ def watch_parent_node(data,stat, event):
 		master_pid = float('inf')
 		for container_name in alive_slaves:
 			container_pid = int(zk.get("/Election/Slaves/"+container_name)[0].decode('utf-8'))
+			
 			if(container_pid < master_pid):
-				master_pid = pid
+				master_pid = container_pid
 		
 		logging.info("New Master - %d",master_pid)
 		logging.info("pid - %d",pid)
