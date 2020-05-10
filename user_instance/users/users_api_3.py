@@ -7,7 +7,7 @@ from datetime import datetime
 import pandas as pd
 
 
-dbaas_url = "http://127.0.0.1:5000"
+dbaas_url = "http://18.210.102.92"
 
 df = pd.read_csv("AreaNameEnum.csv")
 area_dict = dict()

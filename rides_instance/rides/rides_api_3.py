@@ -7,9 +7,9 @@ from datetime import datetime
 import pandas as pd
 
 
-dbaas_url = "http://127.0.0.1:5000"
-load_balancer_url = "http://127.0.0.1:5001"
-rides_ip = '127.0.0.1:5002'
+dbaas_url = "http://18.210.102.92"
+load_balancer_url = "CC-Assignment-3-907148319.us-east-1.elb.amazonaws.com"
+rides_ip = '54.156.206.230'
 
 
 df = pd.read_csv("AreaNameEnum.csv")
