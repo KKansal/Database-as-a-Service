@@ -109,20 +109,8 @@ def list_users():
 	
 @app.route("/api/v1/db/clear",methods=["POST"])
 def clear_db():
-	data_to_send = {}
-	data_to_send['table'] = 'users'
-	data_to_send['operation'] = 'delete'
-	data_to_send['data'] = {}
-
-	response_recieved = send_request.post( dbaas_url + '/api/v1/write',json = data_to_send)
-	
-	data_to_send = {}
-	data_to_send['table'] = 'rides'
-	data_to_send['operation'] = 'delete'
-	data_to_send['data'] = {}
-
-	response_recieved = send_request.post( dbaas_url + '/api/v1/write',json = data_to_send)
-	
+	response_recieved = send_request.post( dbaas_url + '/api/v1/db/clear')
+	return empty_response
 
 
 
