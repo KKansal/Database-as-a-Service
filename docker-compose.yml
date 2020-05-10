@@ -1,5 +1,15 @@
 version: '3.5'
 services:
+    nginx:
+        restart: always
+        build: nginx/
+        depends_on:
+            - orchestrator
+        networks: 
+            - "orch_net"
+        ports:
+            - "0.0.0.0:80:80"
+
     orchestrator:
         container_name: "orchestrator"
         restart: always
@@ -24,6 +34,9 @@ services:
         expose:
             - "15672"
             - "5672"
+        ports:
+            - "0.0.0.0:15672:15672"
+            - "0.0.0.0:5672:5672"
         volumes: 
             - rabbitmq_vol
     zookeeper:
@@ -35,12 +48,20 @@ services:
             - "2181"
             - "3888"
             - "8080"
+        ports:
+            - "0.0.0.0:2181:2181"
+            - "0.0.0.0:3888:3888"
+            - "0.0.0.0:8080:8080"
 
     orch_data:
         container_name: "orch_data"
         image: "mongo"
         networks: 
             - orch_net
+        expose:
+            - "27017"
+        ports:
+            - "0.0.0.0:27017:27017"
 
 networks: 
     orch_net:

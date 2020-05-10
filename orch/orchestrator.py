@@ -11,10 +11,16 @@ import uuid
 import time
 import logging
 
+time.sleep(10)
 
 ZOOKEEPER_HOST = "zookeeper"
 RABBITMQ_HOST = "rabbitmq"
 MONGO_HOST = "orch_data"
+
+
+# ZOOKEEPER_HOST = "localhost"
+# RABBITMQ_HOST = "localhost"
+# MONGO_HOST = "localhost"
 
 
 db = None
@@ -176,11 +182,14 @@ def stop_worker():
 	container_pid = max(mapping.keys())
 
 	container_id = mapping[container_pid]
-
-	mongoContainer = zk.get_children("/Container_pid/" + container)[0] 
-	zk.delete("/Container_pid/" + container,recursive=True)
+	
+	print("Stopping -",container_id)
+	logging.info("Stopping - %s",container_id)
+	mongoContainer = zk.get_children("/Container_pid/" + container_id)[0] 
+	zk.delete("/Container_pid/" + container_id,recursive=True)
 	client.containers.get(container_id).stop()
 	client.containers.get(mongoContainer).stop()
+	client.containers.prune()
 	return container_pid
 
 
@@ -326,6 +335,6 @@ def list_worker():
 
 if __name__ == '__main__':
 	app.debug =True	
-	app.run(use_reloader = False)  #Threaded to have Mutliple concurrent requests
+	app.run(host="0.0.0.0",use_reloader = False)  #Threaded to have Mutliple concurrent requests
 
 
