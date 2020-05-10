@@ -240,8 +240,6 @@ rabbit_client = rabbitmqClient()
 
 start_worker()
 start_worker()
-start_worker()
-start_worker()
 
 @zk.ChildrenWatch("/Election/Slaves", send_event = True)
 def watch_parent_node(children, event):
