@@ -305,8 +305,7 @@ def crash_master():
 def crash_slave():
 	logging.info("Request to Crash Slave")
 	running_containers = zk.get_children("/Election/Slaves")
-	if(len(running_containers) == 2):
-		abort(405)	
+	
 	mapping = dict()
 
 	for container in running_containers:
