@@ -276,7 +276,7 @@ def clear_db():
 	data_to_send['operation'] = "delete"
 	data_to_send['data'] = {}
 
-	response = json.loads(rabbit_client.sendMessage('write',data_to_send,rabbit_client.responseQ))
+	response = json.loads(rabbit_client.sendMessage('write',json.dumps(data_to_send),rabbit_client.responseQ))
 
 	if(response['status_code'] in [400,405]):
 		abort(response['status_code'])
