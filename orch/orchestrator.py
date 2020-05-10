@@ -319,7 +319,7 @@ def crash_slave():
 	return jsonify([highest_pid])
 
 
-@app.route("/api/v1/worker/list",methods=["POST"])
+@app.route("/api/v1/worker/list",methods=["GET"])
 def list_worker():
 	logging.info("Request to List all workers")
 	running_containers = zk.get_children("/Container_pid")
