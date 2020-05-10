@@ -61,7 +61,7 @@ def manage_containers(curr_req):
 def scale():
 	while(True):
 	   print("Reading Requests for 2 mins")
-	   time.sleep(10)
+	   time.sleep(120)
 	   logging.info("Scale Process started")
 	   num_requests = get_num_requests()
 	   reset_http_counter()
