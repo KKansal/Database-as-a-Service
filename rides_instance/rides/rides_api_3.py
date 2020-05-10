@@ -8,7 +8,7 @@ import pandas as pd
 
 
 dbaas_url = "http://18.210.102.92"
-load_balancer_url = "CC-Assignment-3-907148319.us-east-1.elb.amazonaws.com"
+load_balancer_url = "http://CC-Assignment-3-907148319.us-east-1.elb.amazonaws.com"
 rides_ip = '54.156.206.230'
 
 
