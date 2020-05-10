@@ -268,31 +268,6 @@ def write_db():
 		return ("",response['status_code'])
 
 
-@app.route("/api/v1/db/clear",methods=["POST"])
-def clear_db():
-	print("Recieved a Clear Request")
-	data_to_send ={}
-	data_to_send['table'] = 'rides'
-	data_to_send['operation'] = "delete"
-	data_to_send['data'] = {}
-
-	response = json.loads(rabbit_client.sendMessage('write',json.dumps(data_to_send),rabbit_client.responseQ))
-
-	if(response['status_code'] in [400,405]):
-		abort(response['status_code'])
-
-	data_to_send['table'] = 'users'
-
-	response = json.loads(rabbit_client.sendMessage('write',data_to_send,rabbit_client.responseQ))
-
-	if(response['status_code'] in [400,405]):
-		abort(response['status_code'])
-	else:	
-		return ("",response['status_code'])
-
-
-
-
 @app.route("/api/v1/read",methods=["POST"])
 def read_db():
 	print("Recieved a Read Request")
@@ -355,6 +330,23 @@ def list_worker():
 	pid_list.sort()
 	return jsonify(pid_list) 		
 	
+
+@app.route("/api/v1/db/clear",methods=["POST"])
+def clear_db():
+	
+	data_to_send = {}
+	data_to_send['table'] = 'users'
+	data_to_send['operation'] = 'delete'
+	data_to_send['data'] = {}
+
+	response = json.loads(rabbit_client.sendMessage('write',json.dumps(data_to_send),rabbit_client.responseQ))
+	
+
+	data_to_send['table'] = 'rides'
+
+	response = json.loads(rabbit_client.sendMessage('write',json.dumps(data_to_send),rabbit_client.responseQ))
+
+	return ""
 
 if __name__ == '__main__':
 	app.debug =True	
