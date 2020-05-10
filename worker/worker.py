@@ -20,7 +20,15 @@ logging.basicConfig(format='%(asctime)s [%(levelname)s]:%(message)s', level=logg
 logging.getLogger().setLevel(logging.INFO)
 client = MongoClient("mongodb://"+ MONGODB_HOST+ ":27017")
 
+
 db = client.rideshare
+
+db.rides_counter_table.delete_many({})
+db.rides_counter_table.insert_one({"http_counter":0})
+db.users_counter_table.delete_many({})
+db.users_counter_table.insert_one({"http_counter":0})
+
+
 db.users.create_index('username',unique=True)
 db.rides.create_index([('rideId',1)],unique=True)
 
@@ -106,14 +114,14 @@ def delete_data(collection_name,document):
 	logging.info("Deleting %s from Collection %s",str(document),str(collection_name))
 	logging.info("Searching %s from Collection %s",str(document),str(collection_name))
 
-	search_res = db[collection_name].find_one(document)
+	search_res = db[collection_name].find(document)
 	
-	logging.info("Search Results: %s",str(search_res))
-	if(search_res==None):
+	logging.info("Search Results: %d",search_res.count())
+	if(search_res.count() == 0):
 		logging.info("No Results Matched")
 		return 0
 	try:
-		db[collection_name].delete_one(document)
+		db[collection_name].delete_many(document)
 		logging.info("Operation Successfull")
 		return 1
 	except:

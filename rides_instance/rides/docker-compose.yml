@@ -1,0 +1,20 @@
+version: '3'
+
+services:
+  rides:
+    image: rides:latest
+    build: .
+    command: python rides_api_3.py
+    restart: always
+    expose:
+      - "5000"
+
+  nginx:
+    build: ../nginx/nginx_rides/.
+    ports:
+      - "0.0.0.0:80:80"
+    links:
+      - rides
+    depends_on:
+      - rides
+

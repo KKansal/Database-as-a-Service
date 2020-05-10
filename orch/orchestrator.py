@@ -13,14 +13,14 @@ import logging
 
 time.sleep(10)
 
-ZOOKEEPER_HOST = "zookeeper"
-RABBITMQ_HOST = "rabbitmq"
-MONGO_HOST = "orch_data"
+# ZOOKEEPER_HOST = "zookeeper"
+# RABBITMQ_HOST = "rabbitmq"
+# MONGO_HOST = "orch_data"
 
 
-# ZOOKEEPER_HOST = "localhost"
-# RABBITMQ_HOST = "localhost"
-# MONGO_HOST = "localhost"
+ZOOKEEPER_HOST = "localhost"
+RABBITMQ_HOST = "localhost"
+MONGO_HOST = "localhost"
 
 
 db = None
