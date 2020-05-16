@@ -89,7 +89,7 @@ Response Status Codes :
 
 ```
 
-3) /api/v1/crash/master :
+3) /api/v1/crash/master - Crash the Master Worker
    Method : POST
 ```
 Request format : No Data required
@@ -101,7 +101,7 @@ Response format : {
 }
 ```
 
-4) /api/v1/crash/slave :
+4) /api/v1/crash/slave : Crash a Slave Worker
    Method : POST
 ```
 Request format : No Data required
@@ -113,7 +113,7 @@ Response format : {
 }
 ```
 
-5) /api/v1/worker/list :
+5) /api/v1/worker/list : Get a List of all the running Workers
    Method : GET
  
  ```
