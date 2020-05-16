@@ -1,0 +1,9 @@
+To run the rides container:-
+
+1)cd rides
+2)sudo docker-compose up
+
+To run the users container:-
+
+1)cd users
+2)sudo docker-compose up	

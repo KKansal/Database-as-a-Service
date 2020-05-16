@@ -1,0 +1,30 @@
+version: '3'
+
+services:
+  users:
+    image: users:latest
+    build: .
+    command: python users_api_new.py
+    restart: always
+    expose:
+      - "5000"
+    links:
+      - mongodb
+    depends_on:
+      - mongodb
+
+  mongodb:
+    image: mongo:3.0.2
+    expose: 
+      - "27017"
+      - "27018" 
+      - "27019"
+  nginx:
+    build: ../nginx/nginx_users/.
+    ports:
+      - "0.0.0.0:8080:80"
+    links:
+      - users
+    depends_on:
+      - users
+

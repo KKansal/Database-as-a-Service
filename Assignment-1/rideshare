@@ -1,0 +1,8 @@
+server {
+	listen 5000;
+	server_name 18.234.75.209;
+location / {
+	include proxy_params;
+	proxy_pass http://unix:/home/ubuntu/project/app.sock;
+	}
+}

@@ -1,0 +1,13 @@
+Note:- The Rides and users containers are supposed to be running on separate instance as both of them are mapped to port 80
+
+
+1)To run the Rides contianer
+
+	a)cd rides_instance/rides
+	b) sudo docker-compose up
+
+
+2)To run the Users contianer
+
+	a)cd user_instance/users
+	b) sudo docker-compose up
