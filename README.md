@@ -1,5 +1,5 @@
 # Database-as-a-Service (DBaaS)
-A Highly-Available and scalabe Database as a Service.
+A Highly-Available and scalabe Database as a Service. Project under the Cloud Computing Course at PES University 
 
 DBaaS is a containerized service exposing Read and Write API's allowing users to manage Data.
 Under the hood it MongoDB database to facilated data storage. Using Docker the whole Service has been divided into microservices
