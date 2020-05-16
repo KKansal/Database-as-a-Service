@@ -33,8 +33,8 @@ Instructions to install Docker-Compose can be Found here: https://docs.docker.co
 
 
 ### Deployment
-1. Build the Worker Image present in /worker directory and tag the image as "worker"
-For a linux system the it can be automated by running :-
+1. Build the Worker Image present in /worker directory and tag the image as "worker".
+For a linux system it can be automated by running :-
 
 ``` 
  sh build_worker.sh
@@ -101,7 +101,7 @@ Response format : {
 }
 ```
 
- 4)/api/v1/crash/slave :
+4) /api/v1/crash/slave :
    Method : POST
 ```
 Request format : No Data required
@@ -113,8 +113,8 @@ Response format : {
 }
 ```
 
- 5)/api/v1/worker/list :
- Method : GET
+5) /api/v1/worker/list :
+   Method : GET
  
  ```
   Response format : {
