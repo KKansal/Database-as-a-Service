@@ -27,8 +27,8 @@ services:
         command: ['python','orchestrator.py']
 
     rabbitmq:
-        container_name: "rabbitmq"
         image: "rabbitmq:3-management"
+        hostname: "rabbitmq"
         networks: 
             - orch_net
         expose:
@@ -38,7 +38,7 @@ services:
             - "0.0.0.0:15672:15672"
             - "0.0.0.0:5672:5672"
         volumes: 
-            - rabbitmq_vol
+            - rabbitmq:/var/lib/rabbitmq
     zookeeper:
         container_name: "zookeeper"
         image: "zookeeper"
@@ -66,3 +66,7 @@ services:
 networks: 
     orch_net:
         name: orch_net
+
+volumes: 
+    rabbitmq:
+        name: rabbitmq
